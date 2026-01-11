@@ -1,6 +1,7 @@
 streamlit
 pandas
 pypdf
+reportlab
 weasyprint
 requests
 jinja2
