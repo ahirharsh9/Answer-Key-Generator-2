@@ -12,21 +12,28 @@ from weasyprint.text.fonts import FontConfiguration
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Murlidhar Academy PDF Tool", page_icon="📝", layout="wide")
 
-# --- FONTS & ASSETS SETUP ---
+# --- CUSTOM FONT LOADER (From Your Drive Link) ---
 @st.cache_resource
 def load_assets():
-    # 1. Download Noto Sans Gujarati Font
-    font_url = "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSansGujarati/NotoSansGujarati-Regular.ttf"
-    font_bold_url = "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSansGujarati/NotoSansGujarati-Bold.ttf"
+    # 1. Download Font from YOUR Google Drive Link
+    # File ID from your link: 1jVDKtad01ecE6dwitiAlrqR5Ov1YsJzw
+    font_id = "1jVDKtad01ecE6dwitiAlrqR5Ov1YsJzw"
+    font_url = f"https://drive.google.com/uc?export=download&id={font_id}"
     
-    if not os.path.exists("GujFont.ttf"):
-        with open("GujFont.ttf", "wb") as f:
-            f.write(requests.get(font_url).content)
-    if not os.path.exists("GujFont-Bold.ttf"):
-        with open("GujFont-Bold.ttf", "wb") as f:
-            f.write(requests.get(font_bold_url).content)
+    font_filename = "MyCustomFont.ttf"
+    
+    if not os.path.exists(font_filename):
+        try:
+            response = requests.get(font_url)
+            if response.status_code == 200:
+                with open(font_filename, "wb") as f:
+                    f.write(response.content)
+            else:
+                st.error("❌ Failed to download Font from Google Drive.")
+        except Exception as e:
+            st.error(f"⚠️ Font download error: {e}")
 
-    # 2. Default Background Image
+    # 2. Default Background Image (Backup)
     default_bg_url = "https://drive.google.com/uc?export=download&id=1NUwoSCN2OIWgjPQMPX1VileweKzta_HW"
     try:
         response = requests.get(default_bg_url)
@@ -38,7 +45,7 @@ def load_assets():
 
 default_bg_bytes = load_assets()
 
-# --- HELPER: CONVERT IMAGE TO BASE64 FOR HTML ---
+# --- HELPER: IMAGE TO BASE64 ---
 def get_image_base64(image_bytes):
     return base64.b64encode(image_bytes).decode('utf-8')
 
@@ -51,8 +58,8 @@ st.sidebar.divider()
 st.sidebar.info("Designed by Harsh Solanki")
 
 # --- MAIN UI ---
-st.title("📝 Answer Key & Solution Generator (100% Gujarati Fix)")
-st.markdown("HTML Rendering Engine નો ઉપયોગ કરીને બનાવેલ ટૂલ.")
+st.title("📝 Answer Key & Solution Generator")
+st.markdown("Using **Custom HindVadodara Font** from your Google Drive.")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -75,11 +82,11 @@ if add_solution:
         placeholder="1 | A - પાટણ | પાટણ રાણકી વાવ માટે પ્રખ્યાત છે.\n2 | B - કૌશલ્ય | જીવનનિર્વાહનો ખર્ચ વધુ હોય છે."
     )
 
-# --- GENERATE PDF LOGIC ---
+# --- GENERATE PDF ---
 if st.button("Generate PDF 🚀"):
     if pdf_file and csv_file:
         try:
-            with st.spinner("Rendering perfect Gujarati fonts..."):
+            with st.spinner("Rendering PDF with your custom font..."):
                 
                 # 1. Prepare Data
                 df = pd.read_csv(csv_file)
@@ -92,30 +99,26 @@ if st.button("Generate PDF 🚀"):
                         answers[q_num] = str(df.iloc[0][k]).strip()
                 total_questions = len(answers)
 
-                # 2. Prepare Background Image (Base64)
+                # 2. Background Image
                 if img_file_upload:
                     bg_b64 = get_image_base64(img_file_upload.getvalue())
                 elif default_bg_bytes:
                     bg_b64 = get_image_base64(default_bg_bytes)
                 else:
-                    bg_b64 = "" # Fallback if no image
+                    bg_b64 = ""
 
-                # 3. HTML TEMPLATE (CSS Styling)
-                # આ CSS થી જ ફોન્ટ્સ અને લેઆઉટ નક્કી થાય છે
+                # 3. HTML & CSS (Pointing to Downloaded Font)
                 html_content = f"""
                 <!DOCTYPE html>
                 <html>
                 <head>
                     <style>
+                        /* Load Custom Font from Local File */
                         @font-face {{
-                            font-family: 'GujFont';
-                            src: url('file://{os.path.abspath("GujFont.ttf")}');
+                            font-family: 'MyCustomFont';
+                            src: url('file://{os.path.abspath("MyCustomFont.ttf")}');
                         }}
-                        @font-face {{
-                            font-family: 'GujFontBold';
-                            src: url('file://{os.path.abspath("GujFont-Bold.ttf")}');
-                            font-weight: bold;
-                        }}
+                        
                         @page {{
                             size: A4;
                             margin: 0;
@@ -124,19 +127,21 @@ if st.button("Generate PDF 🚀"):
                             background-position: center;
                         }}
                         body {{
-                            font-family: 'GujFont', sans-serif;
+                            font-family: 'MyCustomFont', sans-serif;
                             margin: 0;
-                            padding: 63.5mm 25mm 15mm 25mm; /* Top Margin matches your design */
+                            padding: 63.5mm 25mm 15mm 25mm;
                         }}
                         .title {{
                             text-align: center;
-                            font-family: 'GujFontBold';
+                            font-family: 'MyCustomFont';
+                            font-weight: bold;
                             font-size: 22px;
                             color: white;
                             margin-bottom: 10mm;
                             text-transform: uppercase;
                         }}
-                        /* Answer Key Table */
+                        
+                        /* Answer Key Style */
                         .key-container {{
                             column-count: {math.ceil(total_questions/25)};
                             column-gap: 5mm;
@@ -153,6 +158,7 @@ if st.button("Generate PDF 🚀"):
                             color: white;
                             padding: 4px;
                             border: 0.5px solid #cccccc;
+                            font-weight: bold;
                         }}
                         .key-table td {{
                             padding: 4px;
@@ -162,12 +168,10 @@ if st.button("Generate PDF 🚀"):
                         }}
                         .col-no {{
                             background-color: #e0e0e0 !important;
-                            font-family: 'GujFontBold';
                             font-weight: bold;
-                            width: 30%;
                         }}
                         
-                        /* Solution Table */
+                        /* Solution Style */
                         .sol-table {{
                             width: 100%;
                             border-collapse: collapse;
@@ -179,6 +183,7 @@ if st.button("Generate PDF 🚀"):
                             color: white;
                             padding: 8px;
                             text-align: center;
+                            font-weight: bold;
                         }}
                         .sol-table td {{
                             padding: 8px;
@@ -190,14 +195,9 @@ if st.button("Generate PDF 🚀"):
                             background-color: #f9f9f9;
                         }}
                         
-                        /* Links Footer */
+                        /* Footer */
                         .footer-links {{
-                            position: fixed;
-                            bottom: 10mm;
-                            left: 25mm;
-                            right: 25mm;
-                            height: 40mm;
-                            z-index: 100;
+                            position: fixed; bottom: 10mm; left: 25mm; right: 25mm; height: 40mm;
                         }}
                         a {{ text-decoration: none; color: transparent; display: inline-block; width: 45%; height: 100%; }}
                     </style>
@@ -205,14 +205,11 @@ if st.button("Generate PDF 🚀"):
                 <body>
                 """
 
-                # --- PART A: ANSWER KEY PAGE HTML ---
+                # Content Generation
                 file_name_clean = os.path.splitext(pdf_file.name)[0].replace("_", " ")
                 html_content += f"<div class='title'>{file_name_clean} | ANSWER KEY</div>"
                 
-                # Dynamic Table Generation
                 html_content += "<div class='key-container'>"
-                
-                # We iterate columns manually to match your specific layout
                 questions_per_col = 25
                 num_cols = math.ceil(total_questions / questions_per_col)
                 
@@ -225,25 +222,14 @@ if st.button("Generate PDF 🚀"):
                             ans = answers.get(q_num, "-")
                             html_content += f"<tr><td class='col-no'>{q_num}</td><td>{ans}</td></tr>"
                     html_content += "</tbody></table>"
-                
-                html_content += "</div>" # End key container
+                html_content += "</div>"
 
-                # Footer Links (Invisible clickable areas roughly)
-                html_content += f"""
-                <div class='footer-links'>
-                    <a href='{TG_LINK}'>.</a>
-                    <a href='{IG_LINK}' style='float:right'>.</a>
-                </div>
-                """
+                html_content += f"<div class='footer-links'><a href='{TG_LINK}'>.</a><a href='{IG_LINK}' style='float:right'>.</a></div>"
 
-                # --- PART B: SOLUTION PAGES HTML ---
                 if add_solution and solution_text.strip():
-                    # Page Break
                     html_content += "<div style='break-before: page;'></div>"
                     html_content += "<div class='title'>DETAILED SOLUTIONS</div>"
-                    
-                    html_content += "<table class='sol-table'>"
-                    html_content += "<thead><tr><th style='width:10%'>NO</th><th style='width:25%'>ANSWER</th><th>EXPLANATION</th></tr></thead><tbody>"
+                    html_content += "<table class='sol-table'><thead><tr><th style='width:10%'>NO</th><th style='width:25%'>ANSWER</th><th>EXPLANATION</th></tr></thead><tbody>"
                     
                     lines = solution_text.strip().split('\n')
                     for line in lines:
@@ -252,52 +238,33 @@ if st.button("Generate PDF 🚀"):
                             no_txt = parts[0].strip()
                             ans_txt = parts[1].strip() if len(parts) > 1 else ""
                             expl_txt = parts[2].strip() if len(parts) > 2 else ""
-                            
-                            html_content += f"""
-                            <tr class='sol-row'>
-                                <td class='col-no' style='text-align:center'>{no_txt}</td>
-                                <td style='font-weight:bold; color:#003366'>{ans_txt}</td>
-                                <td>{expl_txt}</td>
-                            </tr>
-                            """
+                            html_content += f"<tr class='sol-row'><td class='col-no' style='text-align:center'>{no_txt}</td><td style='font-weight:bold; color:#003366'>{ans_txt}</td><td>{expl_txt}</td></tr>"
                     html_content += "</tbody></table>"
 
                 html_content += "</body></html>"
 
-                # 4. CONVERT HTML TO PDF (WeasyPrint)
+                # 4. Generate PDF
                 font_config = FontConfiguration()
                 pdf_bytes = HTML(string=html_content).write_pdf(font_config=font_config)
                 
-                # 5. MERGE WITH ORIGINAL QUESTION PAPER
-                # First, create Watermark on original PDF (using classic ReportLab for just this part)
-                # (Watermark text usually isn't complex Gujarati, so this is safe)
-                # ... Skipping complex watermark logic for simplicity, merging directly ...
-                
+                # 5. Merge
                 reader_main = PdfReader(pdf_file)
                 reader_generated = PdfReader(io.BytesIO(pdf_bytes))
                 writer = PdfWriter()
                 
-                # Add Question Paper
                 for page in reader_main.pages:
                     writer.add_page(page)
-                
-                # Add Answer Key & Solutions
                 for page in reader_generated.pages:
                     writer.add_page(page)
                 
                 final_out = io.BytesIO()
                 writer.write(final_out)
                 
-                st.success("✅ PDF Generated with Perfect Gujarati Fonts!")
-                st.download_button(
-                    label="Download Final PDF 📥",
-                    data=final_out.getvalue(),
-                    file_name=f"{os.path.splitext(pdf_file.name)[0]}_FINAL.pdf",
-                    mime="application/pdf"
-                )
+                st.success("✅ PDF Generated using YOUR Custom Font!")
+                st.download_button("Download Final PDF 📥", final_out.getvalue(), f"{os.path.splitext(pdf_file.name)[0]}_FINAL.pdf", "application/pdf")
 
         except Exception as e:
             st.error(f"Error: {e}")
-            st.warning("Ensure 'packages.txt' is created in GitHub with 'pango' libraries listed.")
+            st.warning("Ensure packages.txt is correct on GitHub.")
     else:
-        st.warning("Please upload PDF and CSV.")
+        st.warning("Upload files first.")
