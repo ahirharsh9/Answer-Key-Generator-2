@@ -3,49 +3,91 @@ import pandas as pd
 import io
 import os
 import math
-import base64
 import requests
-import re
-from pypdf import PdfReader, PdfWriter
+import reportlab.rl_config
+
+# --- 1. CRITICAL CONFIG FOR JODAKSHAR (Must be before other imports) ---
+# આ લાઈન જોડાક્ષરો (Complex Script) ને ભેગા કરે છે
+reportlab.rl_config.shaped_text = 'uharfbuzz'
+
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
-from weasyprint import HTML, CSS
-from weasyprint.text.fonts import FontConfiguration
+from reportlab.lib.units import mm
+from reportlab.lib.colors import HexColor
+from reportlab.platypus import Table, TableStyle, Paragraph
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from pypdf import PdfReader, PdfWriter
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Murlidhar Academy PDF Tool", page_icon="📝", layout="wide")
 
-# --- ASSETS LOADER ---
-@st.cache_resource
-def load_assets():
-    # 1. Gujarati Font (Hind Vadodara)
-    font_id = "1jVDKtad01ecE6dwitiAlrqR5Ov1YsJzw"
-    font_url = f"https://drive.google.com/uc?export=download&id={font_id}"
+# --- HELPER FUNCTIONS ---
+def get_drive_direct_url(view_url):
+    try:
+        if '/d/' in view_url:
+            file_id = view_url.split('/d/')[1].split('/')[0]
+            return f"https://drive.google.com/uc?export=download&id={file_id}"
+    except:
+        return view_url
+    return view_url
+
+# --- MIXED FONT LOGIC ---
+def stylize_text(text):
+    """
+    અંગ્રેજી શબ્દો માટે English Font અને ગુજરાતી માટે Gujarati Font વાપરે છે.
+    """
+    if not isinstance(text, str):
+        return str(text)
     
-    if not os.path.exists("MyCustomFont.ttf"):
+    words = text.split(' ')
+    styled_words = []
+    
+    for word in words:
+        # Check if word contains Gujarati characters
+        is_gujarati = any(ord(char) > 127 for char in word)
+        
+        if is_gujarati:
+            # Gujarati Font
+            styled_words.append(f"<font face='GujFont'>{word}</font>")
+        else:
+            # English Font (Helvetica renders cleaner for English numbers/text)
+            styled_words.append(f"<font face='Helvetica-Bold'>{word}</font>") # Bold English
+            
+    return " ".join(styled_words)
+
+# --- LOAD FONTS (Noto Sans Gujarati - BEST FOR JODAKSHAR) ---
+@st.cache_resource
+def load_custom_fonts():
+    # Noto Sans Gujarati (Bold) - Google Fonts Direct Link
+    font_url = "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSansGujarati/NotoSansGujarati-Bold.ttf"
+    font_path = "NotoSansGujarati-Bold.ttf"
+    
+    if not os.path.exists(font_path):
         try:
             response = requests.get(font_url)
             if response.status_code == 200:
-                with open("MyCustomFont.ttf", "wb") as f:
+                with open(font_path, "wb") as f:
                     f.write(response.content)
-        except:
-            pass
-
-    # 2. Background Image
-    bg_url = "https://drive.google.com/uc?export=download&id=1NUwoSCN2OIWgjPQMPX1VileweKzta_HW"
+            else:
+                st.error("❌ Failed to download Noto Sans Font.")
+                return False
+        except Exception as e:
+            st.error(f"⚠️ Font error: {e}")
+            return False
+            
     try:
-        response = requests.get(bg_url)
-        if response.status_code == 200:
-            return response.content
-    except:
-        return None
-    return None
+        # Font Register with 'uharfbuzz' awareness implicitly via Config
+        pdfmetrics.registerFont(TTFont('GujFont', font_path))
+        return True
+    except Exception as e:
+        st.error(f"❌ Font registration failed: {e}")
+        return False
 
-default_bg_bytes = load_assets()
-
-def get_image_base64(image_bytes):
-    return base64.b64encode(image_bytes).decode('utf-8')
+fonts_loaded = load_custom_fonts()
 
 # --- SIDEBAR ---
 st.sidebar.title("⚙️ સેટિંગ્સ")
@@ -56,8 +98,8 @@ st.sidebar.divider()
 st.sidebar.info("Designed by Harsh Solanki")
 
 # --- MAIN UI ---
-st.title("📝 Answer Key & Solution Generator")
-st.markdown("Updated: **Helvetica Title**, **Reduced Margins**, **Perfect Alignment**.")
+st.title("📝 Answer Key & Solution Generator (Fixed Jodakshar)")
+st.markdown("Updated: **50mm Top Margin** (Matches Reference Layout)")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -75,26 +117,51 @@ solution_text = ""
 if add_solution:
     st.info("ℹ️ Format: **No | Answer | Explanation**")
     solution_text = st.text_area(
-        "Paste Data Here:", height=200,
+        "Paste Data Here:", 
+        height=200,
         placeholder="1 | A - પાટણ | પાટણ રાણકી વાવ માટે પ્રખ્યાત છે.\n2 | B - કૌશલ્ય | જીવનનિર્વાહનો ખર્ચ વધુ હોય છે."
     )
 
-# --- GENERATE PDF ---
+# --- BACKEND LOGIC ---
+DEFAULT_BG_URL = "https://drive.google.com/file/d/1NUwoSCN2OIWgjPQMPX1VileweKzta_HW/view?usp=sharing"
+bg_image_data = None
+
+if img_file_upload:
+    bg_image_data = img_file_upload
+else:
+    try:
+        direct_url = get_drive_direct_url(DEFAULT_BG_URL)
+        response = requests.get(direct_url)
+        if response.status_code == 200:
+            bg_image_data = io.BytesIO(response.content)
+            st.info("ℹ️ Using Default Background Image.")
+    except:
+        pass
+
 if st.button("Generate PDF 🚀"):
-    if pdf_file and csv_file:
+    if pdf_file and csv_file and bg_image_data and fonts_loaded:
         try:
-            with st.spinner("Generating PDF..."):
+            with st.spinner("Processing... Please wait"):
+                # CSV Processing
+                df = pd.read_csv(csv_file)
+                key_cols = [c for c in df.columns if c.lower().startswith('key') and c[3:].isdigit()]
+                key_cols.sort(key=lambda x: int(x[3:]))
+                answers = {}
+                if not df.empty:
+                    for k in key_cols:
+                        q_num = int(k.lower().replace('key', ''))
+                        answers[q_num] = str(df.iloc[0][k]).strip()
+                total_questions = len(answers)
                 
-                # 1. WATERMARK GENERATION
+                # Watermark
                 packet_wm = io.BytesIO()
                 reader_temp = PdfReader(pdf_file)
                 page1 = reader_temp.pages[0]
                 width = float(page1.mediabox.width)
                 height = float(page1.mediabox.height)
-                
                 c_wm = canvas.Canvas(packet_wm, pagesize=(width, height))
-                c_wm.setFillColor(colors.grey, alpha=0.10)
-                c_wm.setFont("Helvetica-Bold", 55)
+                c_wm.setFillColor(colors.grey, alpha=0.15)
+                c_wm.setFont("Helvetica-Bold", 60) # English Watermark
                 c_wm.saveState()
                 c_wm.translate(width/2, height/2)
                 c_wm.rotate(45)
@@ -105,182 +172,98 @@ if st.button("Generate PDF 🚀"):
                 watermark_reader = PdfReader(packet_wm)
                 watermark_page = watermark_reader.pages[0]
 
-                # 2. DATA PROCESSING
-                df = pd.read_csv(csv_file)
-                key_cols = [c for c in df.columns if c.lower().startswith('key') and c[3:].isdigit()]
-                key_cols.sort(key=lambda x: int(x[3:]))
-                answers = {}
-                if not df.empty:
-                    for k in key_cols:
-                        q_num = int(k.lower().replace('key', ''))
-                        answers[q_num] = str(df.iloc[0][k]).strip()
-                total_questions = len(answers)
+                # --- GENERATE PDF ---
+                packet_key = io.BytesIO()
+                PAGE_W, PAGE_H = A4
+                c = canvas.Canvas(packet_key, pagesize=A4)
+                
+                # --- CONFIG FOR MARGINS ---
+                # અહીં મેં 63.5mm થી ઘટાડીને 50mm કર્યું છે
+                TOP_MARGIN_MM = 50 
+                TITLE_Y_POS = PAGE_H - (TOP_MARGIN_MM * mm)
+                
+                def draw_page_template(canvas_obj):
+                    image_reader = ImageReader(bg_image_data)
+                    canvas_obj.drawImage(image_reader, 0, 0, width=PAGE_W, height=PAGE_H)
+                    canvas_obj.linkURL(TG_LINK, (10*mm, 5*mm, 110*mm, 50*mm))
+                    canvas_obj.linkURL(IG_LINK, (110*mm, 5*mm, 210*mm, 50*mm))
 
-                # 3. BACKGROUND
-                if img_file_upload:
-                    bg_b64 = get_image_base64(img_file_upload.getvalue())
-                elif default_bg_bytes:
-                    bg_b64 = get_image_base64(default_bg_bytes)
-                else:
-                    bg_b64 = ""
-
-                # 4. HTML / CSS CONSTRUCTION
-                html_content = f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <style>
-                        /* Load Custom Font (Hind Vadodara) */
-                        @font-face {{
-                            font-family: 'HindVadodara';
-                            src: url('file://{os.path.abspath("MyCustomFont.ttf")}');
-                        }}
-                        
-                        @page {{
-                            size: A4;
-                            margin: 0;
-                            background-image: url('data:image/jpeg;base64,{bg_b64}');
-                            background-size: cover;
-                            background-position: center;
-                        }}
-                        
-                        body {{
-                            /* Content font is Hind Vadodara */
-                            font-family: 'HindVadodara', sans-serif;
-                            margin: 0;
-                            /* Reduced Top Padding to pull content UP (was 63.5mm) */
-                            padding: 50mm 25mm 15mm 25mm;
-                        }}
-                        
-                        /* TITLE: Forced Helvetica Bold as requested */
-                        .title {{
-                            text-align: center;
-                            font-family: Helvetica, Arial, sans-serif;
-                            font-weight: bold;
-                            font-size: 24px;
-                            color: white;
-                            margin-top: 0px; 
-                            margin-bottom: 5mm; /* Reduced spacing below title */
-                            text-transform: uppercase;
-                        }}
-                        
-                        /* ANSWER KEY TABLE */
-                        .key-container {{
-                            column-count: {math.ceil(total_questions/25)};
-                            column-gap: 5mm;
-                        }}
-                        .key-table {{
-                            width: 100%;
-                            border-collapse: collapse;
-                            font-size: 12px;
-                            margin-bottom: 2mm;
-                            page-break-inside: avoid;
-                        }}
-                        .key-table th {{
-                            background-color: #003366;
-                            color: white;
-                            padding: 4px;
-                            border: 0.5px solid #cccccc;
-                            font-family: Helvetica, Arial, sans-serif; /* Header Font English/Bold */
-                            font-weight: bold;
-                        }}
-                        .key-table td {{
-                            padding: 4px;
-                            border: 0.5px solid #cccccc;
-                            text-align: center;
-                            background-color: white;
-                            font-weight: normal;
-                        }}
-                        .col-no {{
-                            background-color: #e0e0e0 !important;
-                            font-family: Helvetica, Arial, sans-serif;
-                            font-weight: bold !important;
-                        }}
-
-                        /* SOLUTION TABLE */
-                        .sol-table {{
-                            width: 100%;
-                            border-collapse: collapse;
-                            font-size: 12px;
-                            margin-top: 0px;
-                        }}
-                        .sol-table th {{
-                            background-color: #003366;
-                            color: white;
-                            padding: 8px;
-                            text-align: center;
-                            /* Header Bold in English Font */
-                            font-family: Helvetica, Arial, sans-serif;
-                            font-weight: bold;
-                            border: 1px solid #003366;
-                        }}
-                        .sol-table td {{
-                            padding: 8px;
-                            border: 0.5px solid #cccccc;
-                            vertical-align: top;
-                            background-color: white;
-                            line-height: 1.4;
-                            text-align: left;
-                            font-family: 'HindVadodara', sans-serif; /* Gujarati Content */
-                        }}
-                        .sol-row:nth-child(even) td {{
-                            background-color: #f9f9f9;
-                        }}
-                        
-                        .ans-bold {{
-                            color:#003366; 
-                            font-family: Helvetica, Arial, sans-serif;
-                            font-weight: bold;
-                        }}
-
-                        /* FOOTER */
-                        .footer-links {{
-                            position: fixed; bottom: 10mm; left: 25mm; right: 25mm; height: 40mm;
-                        }}
-                        a {{ text-decoration: none; color: transparent; display: inline-block; width: 45%; height: 100%; }}
-                    </style>
-                </head>
-                <body>
-                """
-
-                # --- PART 1: ANSWER KEY ---
+                # === PAGE 1: ANSWER KEY ===
+                draw_page_template(c)
+                c.setFont("Helvetica-Bold", 20) # Title Font Size
+                c.setFillColor(colors.white)
                 file_name_clean = os.path.splitext(pdf_file.name)[0].replace("_", " ")
-                html_content += f"<div class='title'>{file_name_clean} | ANSWER KEY</div>"
                 
-                html_content += "<div class='key-container'>"
-                questions_per_col = 25
-                num_cols = math.ceil(total_questions / questions_per_col)
-                
-                for c in range(num_cols):
-                    html_content += "<table class='key-table'>"
-                    html_content += "<thead><tr><th>NO</th><th>ANS</th></tr></thead><tbody>"
-                    for r in range(questions_per_col):
-                        q_num = c * questions_per_col + (r + 1)
+                # Draw Title at 50mm from top
+                c.drawCentredString(PAGE_W/2, TITLE_Y_POS, f"{file_name_clean} | ANSWER KEY")
+
+                # Table Setup
+                QUESTIONS_PER_COLUMN = 25
+                num_cols_needed = math.ceil(total_questions / QUESTIONS_PER_COLUMN)
+                table_data = []
+                headers = []
+                for _ in range(num_cols_needed):
+                    headers.extend(["NO", "ANS"])
+                table_data.append(headers)
+
+                # Process Rows for Key
+                for r in range(QUESTIONS_PER_COLUMN):
+                    row = []
+                    for col_idx in range(num_cols_needed):
+                        q_num = col_idx * QUESTIONS_PER_COLUMN + (r + 1)
                         if q_num <= total_questions:
-                            ans = answers.get(q_num, "-")
-                            html_content += f"<tr><td class='col-no'>{q_num}</td><td>{ans}</td></tr>"
-                    html_content += "</tbody></table>"
-                html_content += "</div>"
+                            ans_val = answers.get(q_num, "-")
+                            # Use stylize_text
+                            p_style = ParagraphStyle('KeyStyle', fontName='Helvetica', fontSize=10, alignment=1)
+                            styled_ans = Paragraph(stylize_text(ans_val), p_style)
+                            
+                            row.extend([str(q_num), styled_ans])
+                        else:
+                            row.extend(["", ""])
+                    table_data.append(row)
 
-                html_content += f"<div class='footer-links'><a href='{TG_LINK}'>.</a><a href='{IG_LINK}' style='float:right'>.</a></div>"
+                avail_w = PAGE_W - (50 * mm)
+                col_w = avail_w / (num_cols_needed * 2)
+                t = Table(table_data, colWidths=[col_w] * (num_cols_needed * 2))
+                
+                style = TableStyle([
+                    ('BACKGROUND', (0,0), (-1,0), HexColor("#003366")),
+                    ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                    ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                    ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                    ('GRID', (0,0), (-1,-1), 0.5, HexColor("#cccccc")),
+                    ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, HexColor("#f9f9f9")]),
+                ])
+                for i in range(num_cols_needed):
+                    col_idx_no = i * 2
+                    style.add('FONTNAME', (col_idx_no, 1), (col_idx_no, -1), 'Helvetica-Bold')
+                    style.add('BACKGROUND', (col_idx_no, 1), (col_idx_no, -1), HexColor("#e0e0e0"))
+                    style.add('TEXTCOLOR', (col_idx_no, 1), (col_idx_no, -1), colors.black)
+                
+                t.setStyle(style)
+                w, h = t.wrapOn(c, PAGE_W, PAGE_H)
+                
+                # Draw Table (Title Y - 5mm gap - Table Height)
+                t.drawOn(c, (PAGE_W - w)/2, TITLE_Y_POS - 5*mm - h)
+                c.showPage()
 
-                # --- PART 2: SOLUTIONS ---
+                # === PAGE 2+: DETAILED SOLUTIONS ===
                 if add_solution and solution_text.strip():
-                    html_content += "<div style='break-before: page;'></div>"
-                    html_content += "<div class='title'>DETAILED SOLUTIONS</div>"
+                    styles = getSampleStyleSheet()
+                    # Base style
+                    base_style = ParagraphStyle(
+                        'MixedStyle',
+                        parent=styles['Normal'],
+                        fontName='Helvetica', 
+                        fontSize=10,
+                        leading=14,
+                        alignment=0
+                    )
+
+                    sol_headers = ["NO", "ANSWER", "EXPLANATION"]
                     
-                    html_content += """
-                    <table class='sol-table'>
-                        <thead>
-                            <tr>
-                                <th style='width:8%'>NO</th>
-                                <th style='width:22%'>ANSWER</th>
-                                <th style='width:70%'>EXPLANATION</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                    """
-                    
+                    sol_data = []
                     lines = solution_text.strip().split('\n')
                     for line in lines:
                         parts = line.split('|')
@@ -289,43 +272,84 @@ if st.button("Generate PDF 🚀"):
                             ans_txt = parts[1].strip() if len(parts) > 1 else ""
                             expl_txt = parts[2].strip() if len(parts) > 2 else ""
                             
-                            html_content += f"""
-                            <tr class='sol-row'>
-                                <td class='col-no' style='text-align:center'>{no_txt}</td>
-                                <td class='ans-bold'>{ans_txt}</td>
-                                <td>{expl_txt}</td>
-                            </tr>
-                            """
-                    html_content += "</tbody></table>"
+                            row = [
+                                Paragraph(stylize_text(no_txt), base_style),
+                                Paragraph(stylize_text(ans_txt), base_style),
+                                Paragraph(stylize_text(expl_txt), base_style)
+                            ]
+                            sol_data.append(row)
 
-                html_content += "</body></html>"
+                    col_widths = [20*mm, 50*mm, 110*mm]
+                    x_start = (PAGE_W - sum(col_widths)) / 2
+                    
+                    # Start position calculation using 50mm Margin
+                    y_start = TITLE_Y_POS - 5*mm
+                    bottom_margin = 60 * mm
+                    
+                    draw_page_template(c)
+                    c.setFont("Helvetica-Bold", 20)
+                    c.setFillColor(colors.white)
+                    c.drawCentredString(PAGE_W/2, TITLE_Y_POS, "DETAILED SOLUTIONS")
+                    
+                    header_t = Table([sol_headers], colWidths=col_widths)
+                    header_t.setStyle(TableStyle([
+                        ('BACKGROUND', (0,0), (-1,0), HexColor("#003366")),
+                        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                    ]))
+                    w_h, h_h = header_t.wrapOn(c, PAGE_W, PAGE_H)
+                    header_t.drawOn(c, x_start, y_start - h_h)
+                    current_y = y_start - h_h
+                    
+                    for row in sol_data:
+                        row_t = Table([row], colWidths=col_widths)
+                        row_t.setStyle(TableStyle([
+                            ('GRID', (0,0), (-1,-1), 0.5, HexColor("#cccccc")),
+                            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                            ('BACKGROUND', (0,0), (0,-1), HexColor("#e0e0e0")),
+                        ]))
+                        w_r, h_r = row_t.wrapOn(c, PAGE_W, PAGE_H)
+                        
+                        if current_y - h_r < bottom_margin:
+                            c.showPage()
+                            draw_page_template(c)
+                            c.setFont("Helvetica-Bold", 20)
+                            c.setFillColor(colors.white)
+                            c.drawCentredString(PAGE_W/2, TITLE_Y_POS, "DETAILED SOLUTIONS")
+                            header_t.drawOn(c, x_start, y_start - h_h)
+                            current_y = y_start - h_h
+                        
+                        row_t.drawOn(c, x_start, current_y - h_r)
+                        current_y -= h_r
 
-                # 5. GENERATE PDF
-                font_config = FontConfiguration()
-                pdf_bytes = HTML(string=html_content).write_pdf(font_config=font_config)
+                    c.showPage()
+
+                c.save()
+                packet_key.seek(0)
                 
-                # 6. MERGE
+                # Merge
                 reader_main = PdfReader(pdf_file)
-                reader_generated = PdfReader(io.BytesIO(pdf_bytes))
+                reader_key = PdfReader(packet_key)
                 writer = PdfWriter()
                 
-                # Merge Watermark
+                # Watermark on Question Paper Pages
                 for i in range(len(reader_main.pages)):
                     page = reader_main.pages[i]
                     page.merge_page(watermark_page)
                     writer.add_page(page)
                 
-                for page in reader_generated.pages:
+                # Add Answer Key Pages
+                for page in reader_key.pages:
                     writer.add_page(page)
                 
-                final_out = io.BytesIO()
-                writer.write(final_out)
-                
+                out_pdf = io.BytesIO()
+                writer.write(out_pdf)
                 st.success("✅ PDF Generated!")
-                st.download_button("Download PDF 📥", final_out.getvalue(), f"{os.path.splitext(pdf_file.name)[0]}_FINAL.pdf", "application/pdf")
+                st.download_button("Download PDF 📥", out_pdf.getvalue(), f"{os.path.splitext(pdf_file.name)[0]}_SOL.pdf", "application/pdf")
 
         except Exception as e:
             st.error(f"Error: {e}")
-            st.warning("Check requirements.txt")
     else:
         st.warning("Please upload files.")
