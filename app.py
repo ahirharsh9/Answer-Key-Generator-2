@@ -16,10 +16,10 @@ from weasyprint.text.fonts import FontConfiguration
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Murlidhar Academy PDF Tool", page_icon="📝", layout="wide")
 
-# --- CUSTOM FONT LOADER ---
+# --- ASSETS LOADER ---
 @st.cache_resource
 def load_assets():
-    # 1. Gujarati Font (Hind Vadodara from your Drive)
+    # 1. Gujarati Font (Your Google Drive Link)
     font_id = "1jVDKtad01ecE6dwitiAlrqR5Ov1YsJzw"
     font_url = f"https://drive.google.com/uc?export=download&id={font_id}"
     
@@ -47,32 +47,6 @@ default_bg_bytes = load_assets()
 def get_image_base64(image_bytes):
     return base64.b64encode(image_bytes).decode('utf-8')
 
-# --- HELPER: MIXED FONT TEXT ---
-def format_mixed_text(text):
-    """
-    Splits text to wrap Gujarati in CustomFont and English/Numbers in Sans-Serif (Bold).
-    """
-    if not isinstance(text, str): return str(text)
-    
-    # Logic: If character is Gujarati, wrap in span with custom font.
-    # Otherwise (English/Numbers), let it use system sans-serif (which looks better/bolder).
-    
-    # Simple strategy: Wrap the whole thing in a wrapper that defaults to English font,
-    # but uses CSS class for Gujarati parts.
-    
-    # Regex to find Gujarati segments
-    # Gujarati Unicode Range: \u0A80-\u0AFF
-    formatted_html = ""
-    parts = re.split(r'([^\u0000-\u007F]+)', text) # Split by non-ASCII (assuming non-ascii is Gujarati here)
-    
-    for part in parts:
-        if re.search(r'[^\u0000-\u007F]', part): # It has non-ascii (Gujarati)
-            formatted_html += f"<span class='guj-font'>{part}</span>"
-        else:
-            formatted_html += f"<span class='eng-font'>{part}</span>"
-            
-    return formatted_html
-
 # --- SIDEBAR ---
 st.sidebar.title("⚙️ સેટિંગ્સ")
 WATERMARK_TEXT = st.sidebar.text_input("Watermark Text", "MURLIDHAR ACADEMY")
@@ -83,7 +57,7 @@ st.sidebar.info("Designed by Harsh Solanki")
 
 # --- MAIN UI ---
 st.title("📝 Answer Key & Solution Generator")
-st.markdown("Features: **Every Page Watermark** + **Better English Fonts** + **Perfect Margins**")
+st.markdown("Updated: **Correct Margins** & **Hind Vadodara Fonts** everywhere in Solution.")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -102,17 +76,16 @@ if add_solution:
     st.info("ℹ️ Format: **No | Answer | Explanation**")
     solution_text = st.text_area(
         "Paste Data Here:", height=200,
-        placeholder="1 | A - પાટણ | પાટણ રાણકી વાવ માટે પ્રખ્યાત છે.\n2 | B - Text | English looks bold."
+        placeholder="1 | A - પાટણ | પાટણ રાણકી વાવ માટે પ્રખ્યાત છે.\n2 | B - કૌશલ્ય | જીવનનિર્વાહનો ખર્ચ વધુ હોય છે."
     )
 
-# --- PDF GENERATION ---
+# --- GENERATE PDF ---
 if st.button("Generate PDF 🚀"):
     if pdf_file and csv_file:
         try:
-            with st.spinner("Processing PDF..."):
+            with st.spinner("Generating PDF..."):
                 
-                # 1. CREATE WATERMARK PDF (Using ReportLab)
-                # We create a single watermark page first
+                # 1. WATERMARK
                 packet_wm = io.BytesIO()
                 reader_temp = PdfReader(pdf_file)
                 page1 = reader_temp.pages[0]
@@ -120,7 +93,7 @@ if st.button("Generate PDF 🚀"):
                 height = float(page1.mediabox.height)
                 
                 c_wm = canvas.Canvas(packet_wm, pagesize=(width, height))
-                c_wm.setFillColor(colors.grey, alpha=0.10) # Light opacity
+                c_wm.setFillColor(colors.grey, alpha=0.10)
                 c_wm.setFont("Helvetica-Bold", 55)
                 c_wm.saveState()
                 c_wm.translate(width/2, height/2)
@@ -132,7 +105,7 @@ if st.button("Generate PDF 🚀"):
                 watermark_reader = PdfReader(packet_wm)
                 watermark_page = watermark_reader.pages[0]
 
-                # 2. PREPARE DATA
+                # 2. DATA PROCESSING
                 df = pd.read_csv(csv_file)
                 key_cols = [c for c in df.columns if c.lower().startswith('key') and c[3:].isdigit()]
                 key_cols.sort(key=lambda x: int(x[3:]))
@@ -151,15 +124,15 @@ if st.button("Generate PDF 🚀"):
                 else:
                     bg_b64 = ""
 
-                # 4. HTML CONSTRUCTION
+                # 4. HTML / CSS CONSTRUCTION
                 html_content = f"""
                 <!DOCTYPE html>
                 <html>
                 <head>
                     <style>
-                        /* Load Gujarati Font */
+                        /* Load Custom Font (Hind Vadodara) */
                         @font-face {{
-                            font-family: 'MyCustomFont';
+                            font-family: 'HindVadodara';
                             src: url('file://{os.path.abspath("MyCustomFont.ttf")}');
                         }}
                         
@@ -172,28 +145,25 @@ if st.button("Generate PDF 🚀"):
                         }}
                         
                         body {{
-                            /* Base Font settings */
-                            font-family: Helvetica, Arial, sans-serif; /* Default English looks good here */
+                            /* Default to Hind Vadodara for everything */
+                            font-family: 'HindVadodara', sans-serif;
                             margin: 0;
-                            /* Adjusted Margins for Alignment */
+                            /* Fixed Top Padding for Title Alignment */
                             padding: 63.5mm 25mm 15mm 25mm;
                         }}
                         
-                        /* Font Classes */
-                        .guj-font {{ font-family: 'MyCustomFont'; }}
-                        .eng-font {{ font-family: Helvetica, Arial, sans-serif; font-weight: bold; }}
-
+                        /* TITLE STYLING */
                         .title {{
                             text-align: center;
-                            font-family: 'MyCustomFont';
-                            font-weight: bold;
-                            font-size: 22px;
+                            font-weight: bold; /* Bold Title */
+                            font-size: 24px;
                             color: white;
+                            margin-top: 0px; /* Reset top margin to fix alignment */
                             margin-bottom: 10mm;
                             text-transform: uppercase;
                         }}
                         
-                        /* KEY TABLE */
+                        /* ANSWER KEY TABLE */
                         .key-container {{
                             column-count: {math.ceil(total_questions/25)};
                             column-gap: 5mm;
@@ -210,32 +180,33 @@ if st.button("Generate PDF 🚀"):
                             color: white;
                             padding: 4px;
                             border: 0.5px solid #cccccc;
-                            font-weight: bold;
+                            font-weight: bold; /* Header Bold */
                         }}
                         .key-table td {{
                             padding: 4px;
                             border: 0.5px solid #cccccc;
                             text-align: center;
                             background-color: white;
+                            font-weight: normal; /* Body Regular */
                         }}
                         .col-no {{
                             background-color: #e0e0e0 !important;
-                            font-weight: bold;
+                            font-weight: bold !important; /* NO col bold */
                         }}
 
-                        /* SOLUTION TABLE */
+                        /* SOLUTION TABLE STYLING */
                         .sol-table {{
                             width: 100%;
                             border-collapse: collapse;
-                            font-size: 11px; /* Slightly smaller to fit content */
-                            margin-top: 10px;
+                            font-size: 12px;
+                            margin-top: 0px;
                         }}
                         .sol-table th {{
                             background-color: #003366;
                             color: white;
                             padding: 8px;
                             text-align: center;
-                            font-weight: bold;
+                            font-weight: bold; /* Header Bold */
                             border: 1px solid #003366;
                         }}
                         .sol-table td {{
@@ -244,10 +215,17 @@ if st.button("Generate PDF 🚀"):
                             vertical-align: top;
                             background-color: white;
                             line-height: 1.4;
-                            text-align: left; /* Ensure left alignment */
+                            text-align: left;
+                            font-weight: normal; /* Body Regular */
                         }}
                         .sol-row:nth-child(even) td {{
                             background-color: #f9f9f9;
+                        }}
+                        
+                        /* Explicit bold for Answer Column Text if needed */
+                        .ans-bold {{
+                            color:#003366; 
+                            font-weight: bold;
                         }}
 
                         /* FOOTER */
@@ -260,7 +238,7 @@ if st.button("Generate PDF 🚀"):
                 <body>
                 """
 
-                # --- Content: Answer Key ---
+                # --- PART 1: ANSWER KEY ---
                 file_name_clean = os.path.splitext(pdf_file.name)[0].replace("_", " ")
                 html_content += f"<div class='title'>{file_name_clean} | ANSWER KEY</div>"
                 
@@ -275,16 +253,15 @@ if st.button("Generate PDF 🚀"):
                         q_num = c * questions_per_col + (r + 1)
                         if q_num <= total_questions:
                             ans = answers.get(q_num, "-")
-                            # Format Answer (Mixed Fonts)
-                            fmt_ans = format_mixed_text(ans)
-                            html_content += f"<tr><td class='col-no'>{q_num}</td><td>{fmt_ans}</td></tr>"
+                            html_content += f"<tr><td class='col-no'>{q_num}</td><td>{ans}</td></tr>"
                     html_content += "</tbody></table>"
                 html_content += "</div>"
 
                 html_content += f"<div class='footer-links'><a href='{TG_LINK}'>.</a><a href='{IG_LINK}' style='float:right'>.</a></div>"
 
-                # --- Content: Solutions ---
+                # --- PART 2: SOLUTIONS ---
                 if add_solution and solution_text.strip():
+                    # Page Break with proper margin handling
                     html_content += "<div style='break-before: page;'></div>"
                     html_content += "<div class='title'>DETAILED SOLUTIONS</div>"
                     
@@ -304,14 +281,14 @@ if st.button("Generate PDF 🚀"):
                     for line in lines:
                         parts = line.split('|')
                         if len(parts) >= 1:
-                            no_txt = format_mixed_text(parts[0].strip())
-                            ans_txt = format_mixed_text(parts[1].strip()) if len(parts) > 1 else ""
-                            expl_txt = format_mixed_text(parts[2].strip()) if len(parts) > 2 else ""
+                            no_txt = parts[0].strip()
+                            ans_txt = parts[1].strip() if len(parts) > 1 else ""
+                            expl_txt = parts[2].strip() if len(parts) > 2 else ""
                             
                             html_content += f"""
                             <tr class='sol-row'>
                                 <td class='col-no' style='text-align:center'>{no_txt}</td>
-                                <td style='color:#003366; font-weight:bold;'>{ans_txt}</td>
+                                <td class='ans-bold'>{ans_txt}</td>
                                 <td>{expl_txt}</td>
                             </tr>
                             """
@@ -319,33 +296,33 @@ if st.button("Generate PDF 🚀"):
 
                 html_content += "</body></html>"
 
-                # 5. GENERATE HTML PDF
+                # 5. GENERATE PDF
                 font_config = FontConfiguration()
                 pdf_bytes = HTML(string=html_content).write_pdf(font_config=font_config)
                 
-                # 6. MERGING LOGIC (Watermark on EVERY Page)
+                # 6. MERGE (Watermark on ALL pages)
                 reader_main = PdfReader(pdf_file)
                 reader_generated = PdfReader(io.BytesIO(pdf_bytes))
                 writer = PdfWriter()
                 
-                # Step A: Add Question Paper Pages (With Watermark on EACH)
+                # A. Original PDF + Watermark
                 for i in range(len(reader_main.pages)):
                     page = reader_main.pages[i]
-                    page.merge_page(watermark_page) # Merge watermark on this specific page
+                    page.merge_page(watermark_page)
                     writer.add_page(page)
                 
-                # Step B: Add Answer Key/Solution Pages (Already has background)
+                # B. Generated Pages (Answer Key / Solution)
                 for page in reader_generated.pages:
                     writer.add_page(page)
                 
                 final_out = io.BytesIO()
                 writer.write(final_out)
                 
-                st.success("✅ PDF Generated: Perfect Fonts & Watermarks!")
+                st.success("✅ PDF Generated!")
                 st.download_button("Download PDF 📥", final_out.getvalue(), f"{os.path.splitext(pdf_file.name)[0]}_FINAL.pdf", "application/pdf")
 
         except Exception as e:
             st.error(f"Error: {e}")
-            st.warning("Ensure packages.txt exists on GitHub.")
+            st.warning("Check requirements.txt and packages.txt")
     else:
         st.warning("Please upload files.")
