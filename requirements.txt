@@ -4,3 +4,4 @@ pypdf
 weasyprint
 requests
 jinja2
+cffi
