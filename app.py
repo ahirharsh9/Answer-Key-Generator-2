@@ -6,8 +6,8 @@ import math
 import requests
 import reportlab.rl_config
 
-# --- 1. CRITICAL CONFIG FOR JODAKSHAR (Must be before other imports) ---
-# આ લાઈન જોડાક્ષરો (Complex Script) ને ભેગા કરે છે
+# --- 1. CRITICAL CONFIG FOR JODAKSHAR ---
+# આ લાઈન સૌથી ઉપર જ હોવી જોઈએ
 reportlab.rl_config.shaped_text = 'uharfbuzz'
 
 from reportlab.pdfgen import canvas
@@ -35,34 +35,11 @@ def get_drive_direct_url(view_url):
         return view_url
     return view_url
 
-# --- MIXED FONT LOGIC ---
-def stylize_text(text):
-    """
-    અંગ્રેજી શબ્દો માટે English Font અને ગુજરાતી માટે Gujarati Font વાપરે છે.
-    """
-    if not isinstance(text, str):
-        return str(text)
-    
-    words = text.split(' ')
-    styled_words = []
-    
-    for word in words:
-        # Check if word contains Gujarati characters
-        is_gujarati = any(ord(char) > 127 for char in word)
-        
-        if is_gujarati:
-            # Gujarati Font
-            styled_words.append(f"<font face='GujFont'>{word}</font>")
-        else:
-            # English Font (Helvetica renders cleaner for English numbers/text)
-            styled_words.append(f"<font face='Helvetica-Bold'>{word}</font>") # Bold English
-            
-    return " ".join(styled_words)
-
 # --- LOAD FONTS (Noto Sans Gujarati - BEST FOR JODAKSHAR) ---
 @st.cache_resource
 def load_custom_fonts():
-    # Noto Sans Gujarati (Bold) - Google Fonts Direct Link
+    # Noto Sans Gujarati (Bold) - જોડાક્ષરો માટે આ શ્રેષ્ઠ છે
+    # આ ફોન્ટમાં English ABCD પણ હોય છે, એટલે મિક્સ કરવાની જરૂર નથી
     font_url = "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSansGujarati/NotoSansGujarati-Bold.ttf"
     font_path = "NotoSansGujarati-Bold.ttf"
     
@@ -72,19 +49,14 @@ def load_custom_fonts():
             if response.status_code == 200:
                 with open(font_path, "wb") as f:
                     f.write(response.content)
-            else:
-                st.error("❌ Failed to download Noto Sans Font.")
-                return False
-        except Exception as e:
-            st.error(f"⚠️ Font error: {e}")
-            return False
+        except:
+            pass
             
     try:
-        # Font Register with 'uharfbuzz' awareness implicitly via Config
+        # Register Font specifically for Harfbuzz
         pdfmetrics.registerFont(TTFont('GujFont', font_path))
         return True
-    except Exception as e:
-        st.error(f"❌ Font registration failed: {e}")
+    except:
         return False
 
 fonts_loaded = load_custom_fonts()
@@ -98,8 +70,8 @@ st.sidebar.divider()
 st.sidebar.info("Designed by Harsh Solanki")
 
 # --- MAIN UI ---
-st.title("📝 Answer Key & Solution Generator (Fixed Jodakshar)")
-st.markdown("Updated: **50mm Top Margin** (Matches Reference Layout)")
+st.title("📝 Answer Key & Solution Generator")
+st.markdown("Updated: **Jodakshar Fixed** (Single Font Logic) + **50mm Layout**")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -161,7 +133,7 @@ if st.button("Generate PDF 🚀"):
                 height = float(page1.mediabox.height)
                 c_wm = canvas.Canvas(packet_wm, pagesize=(width, height))
                 c_wm.setFillColor(colors.grey, alpha=0.15)
-                c_wm.setFont("Helvetica-Bold", 60) # English Watermark
+                c_wm.setFont("Helvetica-Bold", 60)
                 c_wm.saveState()
                 c_wm.translate(width/2, height/2)
                 c_wm.rotate(45)
@@ -177,8 +149,7 @@ if st.button("Generate PDF 🚀"):
                 PAGE_W, PAGE_H = A4
                 c = canvas.Canvas(packet_key, pagesize=A4)
                 
-                # --- CONFIG FOR MARGINS ---
-                # અહીં મેં 63.5mm થી ઘટાડીને 50mm કર્યું છે
+                # 50mm Margin Configuration
                 TOP_MARGIN_MM = 50 
                 TITLE_Y_POS = PAGE_H - (TOP_MARGIN_MM * mm)
                 
@@ -190,11 +161,9 @@ if st.button("Generate PDF 🚀"):
 
                 # === PAGE 1: ANSWER KEY ===
                 draw_page_template(c)
-                c.setFont("Helvetica-Bold", 20) # Title Font Size
+                c.setFont("Helvetica-Bold", 20)
                 c.setFillColor(colors.white)
                 file_name_clean = os.path.splitext(pdf_file.name)[0].replace("_", " ")
-                
-                # Draw Title at 50mm from top
                 c.drawCentredString(PAGE_W/2, TITLE_Y_POS, f"{file_name_clean} | ANSWER KEY")
 
                 # Table Setup
@@ -206,18 +175,17 @@ if st.button("Generate PDF 🚀"):
                     headers.extend(["NO", "ANS"])
                 table_data.append(headers)
 
-                # Process Rows for Key
+                # Style for Key (We use simple Helvetica for Key as it's usually just A, B, C, D)
+                key_style = ParagraphStyle('KeyStyle', fontName='Helvetica', fontSize=10, alignment=1)
+
                 for r in range(QUESTIONS_PER_COLUMN):
                     row = []
                     for col_idx in range(num_cols_needed):
                         q_num = col_idx * QUESTIONS_PER_COLUMN + (r + 1)
                         if q_num <= total_questions:
                             ans_val = answers.get(q_num, "-")
-                            # Use stylize_text
-                            p_style = ParagraphStyle('KeyStyle', fontName='Helvetica', fontSize=10, alignment=1)
-                            styled_ans = Paragraph(stylize_text(ans_val), p_style)
-                            
-                            row.extend([str(q_num), styled_ans])
+                            # Simple text for key
+                            row.extend([str(q_num), ans_val])
                         else:
                             row.extend(["", ""])
                     table_data.append(row)
@@ -243,23 +211,29 @@ if st.button("Generate PDF 🚀"):
                 
                 t.setStyle(style)
                 w, h = t.wrapOn(c, PAGE_W, PAGE_H)
-                
-                # Draw Table (Title Y - 5mm gap - Table Height)
                 t.drawOn(c, (PAGE_W - w)/2, TITLE_Y_POS - 5*mm - h)
                 c.showPage()
 
                 # === PAGE 2+: DETAILED SOLUTIONS ===
                 if add_solution and solution_text.strip():
                     styles = getSampleStyleSheet()
-                    # Base style
-                    base_style = ParagraphStyle(
-                        'MixedStyle',
+                    
+                    # --- FIX IS HERE ---
+                    # We create a style that uses ONLY 'GujFont' (Noto Sans).
+                    # This font supports both English and Gujarati.
+                    # By NOT switching fonts mid-sentence, Harfbuzz can shape the text perfectly.
+                    sol_style = ParagraphStyle(
+                        'SolStyle',
                         parent=styles['Normal'],
-                        fontName='Helvetica', 
+                        fontName='GujFont', # Using Noto Sans for EVERYTHING in Explanation
                         fontSize=10,
                         leading=14,
                         alignment=0
                     )
+                    
+                    # For No/Ans columns, we can keep Helvetica for crisp numbers
+                    std_style = ParagraphStyle('Std', fontName='Helvetica', fontSize=10, alignment=0)
+                    bold_style = ParagraphStyle('Bold', fontName='Helvetica-Bold', fontSize=10, alignment=0, textColor=HexColor("#003366"))
 
                     sol_headers = ["NO", "ANSWER", "EXPLANATION"]
                     
@@ -273,16 +247,15 @@ if st.button("Generate PDF 🚀"):
                             expl_txt = parts[2].strip() if len(parts) > 2 else ""
                             
                             row = [
-                                Paragraph(stylize_text(no_txt), base_style),
-                                Paragraph(stylize_text(ans_txt), base_style),
-                                Paragraph(stylize_text(expl_txt), base_style)
+                                Paragraph(no_txt, std_style),
+                                Paragraph(ans_txt, bold_style),
+                                Paragraph(expl_txt, sol_style) # Apply GujFont to whole Explanation
                             ]
                             sol_data.append(row)
 
                     col_widths = [20*mm, 50*mm, 110*mm]
                     x_start = (PAGE_W - sum(col_widths)) / 2
                     
-                    # Start position calculation using 50mm Margin
                     y_start = TITLE_Y_POS - 5*mm
                     bottom_margin = 60 * mm
                     
@@ -334,13 +307,11 @@ if st.button("Generate PDF 🚀"):
                 reader_key = PdfReader(packet_key)
                 writer = PdfWriter()
                 
-                # Watermark on Question Paper Pages
                 for i in range(len(reader_main.pages)):
                     page = reader_main.pages[i]
                     page.merge_page(watermark_page)
                     writer.add_page(page)
                 
-                # Add Answer Key Pages
                 for page in reader_key.pages:
                     writer.add_page(page)
                 
