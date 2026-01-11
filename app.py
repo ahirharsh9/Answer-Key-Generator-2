@@ -19,7 +19,7 @@ st.set_page_config(page_title="Murlidhar Academy PDF Tool", page_icon="📝", la
 # --- ASSETS LOADER ---
 @st.cache_resource
 def load_assets():
-    # 1. Gujarati Font (Your Google Drive Link)
+    # 1. Gujarati Font (Hind Vadodara)
     font_id = "1jVDKtad01ecE6dwitiAlrqR5Ov1YsJzw"
     font_url = f"https://drive.google.com/uc?export=download&id={font_id}"
     
@@ -57,7 +57,7 @@ st.sidebar.info("Designed by Harsh Solanki")
 
 # --- MAIN UI ---
 st.title("📝 Answer Key & Solution Generator")
-st.markdown("Updated: **Correct Margins** & **Hind Vadodara Fonts** everywhere in Solution.")
+st.markdown("Updated: **Helvetica Title**, **Reduced Margins**, **Perfect Alignment**.")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -85,7 +85,7 @@ if st.button("Generate PDF 🚀"):
         try:
             with st.spinner("Generating PDF..."):
                 
-                # 1. WATERMARK
+                # 1. WATERMARK GENERATION
                 packet_wm = io.BytesIO()
                 reader_temp = PdfReader(pdf_file)
                 page1 = reader_temp.pages[0]
@@ -145,21 +145,22 @@ if st.button("Generate PDF 🚀"):
                         }}
                         
                         body {{
-                            /* Default to Hind Vadodara for everything */
+                            /* Content font is Hind Vadodara */
                             font-family: 'HindVadodara', sans-serif;
                             margin: 0;
-                            /* Fixed Top Padding for Title Alignment */
-                            padding: 63.5mm 25mm 15mm 25mm;
+                            /* Reduced Top Padding to pull content UP (was 63.5mm) */
+                            padding: 50mm 25mm 15mm 25mm;
                         }}
                         
-                        /* TITLE STYLING */
+                        /* TITLE: Forced Helvetica Bold as requested */
                         .title {{
                             text-align: center;
-                            font-weight: bold; /* Bold Title */
+                            font-family: Helvetica, Arial, sans-serif;
+                            font-weight: bold;
                             font-size: 24px;
                             color: white;
-                            margin-top: 0px; /* Reset top margin to fix alignment */
-                            margin-bottom: 10mm;
+                            margin-top: 0px; 
+                            margin-bottom: 5mm; /* Reduced spacing below title */
                             text-transform: uppercase;
                         }}
                         
@@ -180,21 +181,23 @@ if st.button("Generate PDF 🚀"):
                             color: white;
                             padding: 4px;
                             border: 0.5px solid #cccccc;
-                            font-weight: bold; /* Header Bold */
+                            font-family: Helvetica, Arial, sans-serif; /* Header Font English/Bold */
+                            font-weight: bold;
                         }}
                         .key-table td {{
                             padding: 4px;
                             border: 0.5px solid #cccccc;
                             text-align: center;
                             background-color: white;
-                            font-weight: normal; /* Body Regular */
+                            font-weight: normal;
                         }}
                         .col-no {{
                             background-color: #e0e0e0 !important;
-                            font-weight: bold !important; /* NO col bold */
+                            font-family: Helvetica, Arial, sans-serif;
+                            font-weight: bold !important;
                         }}
 
-                        /* SOLUTION TABLE STYLING */
+                        /* SOLUTION TABLE */
                         .sol-table {{
                             width: 100%;
                             border-collapse: collapse;
@@ -206,7 +209,9 @@ if st.button("Generate PDF 🚀"):
                             color: white;
                             padding: 8px;
                             text-align: center;
-                            font-weight: bold; /* Header Bold */
+                            /* Header Bold in English Font */
+                            font-family: Helvetica, Arial, sans-serif;
+                            font-weight: bold;
                             border: 1px solid #003366;
                         }}
                         .sol-table td {{
@@ -216,15 +221,15 @@ if st.button("Generate PDF 🚀"):
                             background-color: white;
                             line-height: 1.4;
                             text-align: left;
-                            font-weight: normal; /* Body Regular */
+                            font-family: 'HindVadodara', sans-serif; /* Gujarati Content */
                         }}
                         .sol-row:nth-child(even) td {{
                             background-color: #f9f9f9;
                         }}
                         
-                        /* Explicit bold for Answer Column Text if needed */
                         .ans-bold {{
                             color:#003366; 
+                            font-family: Helvetica, Arial, sans-serif;
                             font-weight: bold;
                         }}
 
@@ -261,7 +266,6 @@ if st.button("Generate PDF 🚀"):
 
                 # --- PART 2: SOLUTIONS ---
                 if add_solution and solution_text.strip():
-                    # Page Break with proper margin handling
                     html_content += "<div style='break-before: page;'></div>"
                     html_content += "<div class='title'>DETAILED SOLUTIONS</div>"
                     
@@ -300,18 +304,17 @@ if st.button("Generate PDF 🚀"):
                 font_config = FontConfiguration()
                 pdf_bytes = HTML(string=html_content).write_pdf(font_config=font_config)
                 
-                # 6. MERGE (Watermark on ALL pages)
+                # 6. MERGE
                 reader_main = PdfReader(pdf_file)
                 reader_generated = PdfReader(io.BytesIO(pdf_bytes))
                 writer = PdfWriter()
                 
-                # A. Original PDF + Watermark
+                # Merge Watermark
                 for i in range(len(reader_main.pages)):
                     page = reader_main.pages[i]
                     page.merge_page(watermark_page)
                     writer.add_page(page)
                 
-                # B. Generated Pages (Answer Key / Solution)
                 for page in reader_generated.pages:
                     writer.add_page(page)
                 
@@ -323,6 +326,6 @@ if st.button("Generate PDF 🚀"):
 
         except Exception as e:
             st.error(f"Error: {e}")
-            st.warning("Check requirements.txt and packages.txt")
+            st.warning("Check requirements.txt")
     else:
         st.warning("Please upload files.")
